@@ -136,7 +136,7 @@ export function HistoryDrawer({ navigation }: { navigation: Nav }) {
       key={label}
       feedback="row"
       onPress={onPress ?? undefined}
-      disabled={!onPress}
+      comingSoon={!onPress}
       accessibilityState={{ selected, disabled: !onPress }}
       style={[styles.row, selected && { backgroundColor: c.bgRowSelected }]}
     >

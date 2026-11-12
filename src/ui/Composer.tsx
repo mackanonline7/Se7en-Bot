@@ -26,7 +26,7 @@ export function Composer({ offline, streaming, onSend, onStop }: Props) {
       pointerEvents={offline ? 'none' : 'auto'}
     >
       {/* Attachments (plus) and Röstläge (mic) are later build steps: shown inactive. */}
-      <Tap disabled accessibilityLabel="Bifoga" style={styles.icon}>
+      <Tap comingSoon accessibilityLabel="Bifoga" style={styles.icon}>
         <Plus size={22} strokeWidth={1.8} color={c.textPrimary} />
       </Tap>
       <TextInput
@@ -39,7 +39,7 @@ export function Composer({ offline, streaming, onSend, onStop }: Props) {
         style={[type.body, styles.input, { color: c.textPrimary }]}
         accessibilityLabel="Meddelande"
       />
-      <Tap disabled accessibilityLabel="Röstläge" style={styles.icon}>
+      <Tap comingSoon accessibilityLabel="Röstläge" style={styles.icon}>
         <Mic size={22} strokeWidth={1.8} color={c.textPrimary} />
       </Tap>
       {streaming ? (

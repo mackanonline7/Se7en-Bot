@@ -3,12 +3,13 @@ import { useRouter } from 'expo-router';
 import { Check, X } from 'lucide-react-native';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { hermes, type Approval, type Job } from '../../hermes/client';
 import { useApp } from '../../state/AppState';
 import type { Run, Step } from '../../state/chat';
 import { clock } from '../../state/history';
-import { useColors } from '../../theme/theme';
-import { radius, space, type } from '../../theme/tokens';
+import { useColors, useReduceMotion } from '../../theme/theme';
+import { motion, radius, space, type } from '../../theme/tokens';
 import { PresenceDots } from '../../ui/PresenceDots';
 import { Button, ErrorBanner, Overline, Skeleton, StatusChip, StatusDot, ThinkingDots } from '../../ui/parts';
 import { SubTopBar } from '../../ui/TopBar';
@@ -27,9 +28,10 @@ function Card({ children, waiting }: { children: ReactNode; waiting?: boolean })
 
 function StepRow({ step }: { step: Step }) {
   const c = useColors();
+  const reduce = useReduceMotion();
   const color = step.state === 'failed' ? c.textError : step.state === 'active' ? c.textPrimary : c.textSecondary;
   return (
-    <View style={styles.step}>
+    <Animated.View entering={reduce ? undefined : FadeIn.duration(motion.base)} style={styles.step}>
       <View style={styles.stepIcon}>
         {step.state === 'done' && <Check size={16} strokeWidth={1.8} color={c.textSecondary} />}
         {step.state === 'active' && <ThinkingDots color={c.textPrimary} />}
@@ -38,7 +40,7 @@ function StepRow({ step }: { step: Step }) {
       <Text numberOfLines={2} style={[type.body, { color, flex: 1 }]}>
         {step.label}
       </Text>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -59,7 +61,7 @@ function TaskCard({ run, onStop }: { run: Run; onStop: () => void }) {
       {run.steps.map((s, i) => (
         <StepRow key={i} step={s} />
       ))}
-      <Button label="Stoppa" variant="destructive" onPress={onStop} />
+      <Button label="Stoppa" variant="destructive" fullWidth onPress={onStop} />
     </Card>
   );
 }
@@ -139,13 +141,15 @@ export default function AgentScreen() {
             <View style={styles.idle}>
               <PresenceDots size="md" />
               <Text style={[type.bodyStrong, { color: c.textPrimary }]}>Hermes vilar</Text>
-              <Text style={[type.small, { color: c.textSecondary }]}>Inga uppgifter just nu.</Text>
+              <Text style={[type.small, { color: c.textSecondary }]}>Inga uppgifter startade från appen just nu.</Text>
             </View>
           </Card>
         )}
 
         {run?.approvals.map((a, i) => (
-          <ApprovalCard key={`${a.requestId}-${i}`} approval={a} onShow={() => router.push({ pathname: '/draft', params: { i } })} />
+          <Animated.View key={`${a.requestId}-${i}`} exiting={FadeOut.duration(motion.base)}>
+            <ApprovalCard approval={a} onShow={() => router.push({ pathname: '/draft', params: { i } })} />
+          </Animated.View>
         ))}
 
         {status === 'loading' && !info ? (

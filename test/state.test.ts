@@ -67,3 +67,14 @@ test('history: search matches title and preview, case-insensitive; untitled fall
   expect(searchSessions(sessions, 'HOTELL').map((s) => s.id)).toEqual(['2']);
   expect(sessionTitle(sessions[1])).toBe('boka hotell');
 });
+
+test('chat: a new step marks the previous active step done; a late failure still lands on its step', () => {
+  const tool = (state: 'started' | 'completed' | 'failed', name: string) =>
+    ({ type: 'stream', assistantId: 'a', event: { type: 'tool', state, name, preview: '' } }) as const;
+  let s = chatReducer(initialChat, { type: 'send', text: 'hej', userId: 'u', assistantId: 'a', at: 0 });
+  s = chatReducer(s, tool('started', 'web_search'));
+  s = chatReducer(s, tool('started', 'write_file'));
+  expect(s.run?.steps.map((x) => [x.name, x.state])).toEqual([['web_search', 'done'], ['write_file', 'active']]);
+  s = chatReducer(s, tool('failed', 'web_search'));
+  expect(s.run?.steps.map((x) => x.state)).toEqual(['failed', 'active']);
+});

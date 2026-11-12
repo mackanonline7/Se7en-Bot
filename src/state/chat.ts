@@ -107,9 +107,14 @@ function applyStreamEvent(state: ChatState, assistantId: string, e: StreamEvent)
       if (!run) return state;
       let steps = run.steps;
       if (e.state === 'started') {
-        steps = [...steps, { name: e.name, label: e.preview || e.name, state: 'active' }];
+        // agent.md › Nytt steg: appended last; the previous active step becomes done.
+        steps = [
+          ...steps.map((s) => (s.state === 'active' ? { ...s, state: 'done' as const } : s)),
+          { name: e.name, label: e.preview || e.name, state: 'active' },
+        ];
       } else {
-        const i = steps.findIndex((s) => s.name === e.name && s.state === 'active');
+        // A failure may arrive after a newer step already marked this one done.
+        const i = steps.findLastIndex((s) => s.name === e.name && (s.state === 'active' || e.state === 'failed'));
         if (i !== -1) steps = steps.map((s, j) => (j === i ? { ...s, state: e.state === 'failed' ? 'failed' : 'done' } : s));
       }
       return { ...state, run: { ...run, steps } };

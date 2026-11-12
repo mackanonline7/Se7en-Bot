@@ -60,12 +60,14 @@ export function Button({
   variant = 'primary',
   loading,
   disabled,
+  fullWidth,
 }: {
   label: string;
   onPress: () => void;
   variant?: ButtonVariant;
   loading?: boolean;
   disabled?: boolean;
+  fullWidth?: boolean;
 }) {
   const c = useColors();
   const fg = variant === 'primary' ? c.textOnPrimary : variant === 'destructive' ? c.textError : c.textPrimary;
@@ -77,6 +79,7 @@ export function Button({
       accessibilityLabel={label}
       style={[
         styles.button,
+        fullWidth && { alignSelf: 'stretch' },
         variant === 'primary' ? { backgroundColor: c.primary } : { borderWidth: 1, borderColor: c.border },
         loading && { opacity: 1 },
       ]}
