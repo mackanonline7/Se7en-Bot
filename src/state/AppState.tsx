@@ -1,14 +1,33 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
-import { hermes, HermesError, type Approval, type Connection, type Session } from '../hermes/client';
-import { chatReducer, initialChat, type ChatState } from './chat';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
+import { hermes, HermesError, type Approval, type Connection, type Runtime, type Session } from '../hermes/client';
+import { emptyStore, latestSession, parseStore, visibleSessions, type Bot, type BotStore } from './bots';
+import { chatReducer, initialChat, type ChatAction, type ChatState } from './chat';
 
 const URL_KEY = 'hermes.url';
 const TOKEN_KEY = 'hermes.token';
+const BOTS_KEY = 'bots.v1';
+
+// A chat slot: one open conversation per bot, plus one for conversations without a bot.
+export type ChatKey = string;
+export const NO_BOT: ChatKey = '';
 
 export type ConnStatus = 'loading' | 'none' | 'connected' | 'offline';
 export type SessionsState = { list: Session[]; status: 'loading' | 'ok' | 'failed' };
+export type BotDraft = Pick<Bot, 'name' | 'shape' | 'color'>;
+
+type Chats = Record<ChatKey, ChatState>;
+type ChatsAction = { key: ChatKey; action: ChatAction } | { reset: true } | { drop: ChatKey };
+
+function chatsReducer(state: Chats, a: ChatsAction): Chats {
+  if ('reset' in a) return {};
+  if ('drop' in a) {
+    const { [a.drop]: _dropped, ...rest } = state;
+    return rest;
+  }
+  return { ...state, [a.key]: chatReducer(state[a.key] ?? initialChat, a.action) };
+}
 
 type AppState = {
   conn: Connection | null;
@@ -16,17 +35,24 @@ type AppState = {
   connect(url: string, token: string): Promise<void>;
   disconnect(): Promise<void>;
   reconnect(): void;
-  chat: ChatState;
-  send(text: string): void;
-  retry(messageId: string): void;
-  stop(): void;
-  openSession(id: string): void;
-  newChat(): void;
-  respondApproval(approval: Approval, choice: 'once' | 'deny'): Promise<void>;
+  chats: Chats;
+  runtime: Runtime | null;
+  send(key: ChatKey, text: string): void;
+  retry(key: ChatKey, messageId: string): void;
+  stop(key: ChatKey): void;
+  newChat(key: ChatKey): void;
+  openBot(botId: string): void;
+  openSession(id: string): ChatKey;
+  respondApproval(key: ChatKey, approval: Approval, choice: 'once' | 'deny'): Promise<void>;
   sessions: SessionsState;
   refreshSessions(): void;
   deleteSession(id: string): Promise<void>;
   renameSession(id: string, title: string): Promise<void>;
+  store: BotStore;
+  botsStatus: 'loading' | 'ok' | 'failed';
+  reloadBots(): void;
+  saveBot(draft: BotDraft, id?: string): Promise<Bot>;
+  deleteBot(id: string): Promise<void>;
 };
 
 const Ctx = createContext<AppState | null>(null);
@@ -37,17 +63,28 @@ export function useApp(): AppState {
   return value;
 }
 
+export function useChat(key: ChatKey): ChatState {
+  return useApp().chats[key] ?? initialChat;
+}
+
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const unreachable = (e: unknown) => e instanceof HermesError && e.code === 'unreachable';
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [conn, setConn] = useState<Connection | null>(null);
   const [connStatus, setConnStatus] = useState<ConnStatus>('loading');
-  const [chat, dispatch] = useReducer(chatReducer, initialChat);
-  const [sessions, setSessions] = useState<SessionsState>({ list: [], status: 'loading' });
-  const chatRef = useRef(chat);
-  chatRef.current = chat;
-  const abortRef = useRef<AbortController | null>(null);
+  const [chats, dispatch] = useReducer(chatsReducer, {});
+  const [runtime, setRuntime] = useState<Runtime | null>(null);
+  const [allSessions, setSessions] = useState<SessionsState>({ list: [], status: 'loading' });
+  const [store, setStore] = useState<BotStore>(emptyStore);
+  const [botsStatus, setBotsStatus] = useState<AppState['botsStatus']>('loading');
+  const chatsRef = useRef(chats);
+  chatsRef.current = chats;
+  const storeRef = useRef(store);
+  storeRef.current = store;
+  const sessionsRef = useRef(allSessions);
+  sessionsRef.current = allSessions;
+  const aborts = useRef(new Map<ChatKey, AbortController>());
 
   const fail = useCallback((e: unknown) => {
     if (unreachable(e)) setConnStatus('offline');
@@ -69,32 +106,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }, [conn]);
 
-  // Restore the saved server on launch.
+  const reloadBots = useCallback(() => {
+    setBotsStatus('loading');
+    AsyncStorage.getItem(BOTS_KEY)
+      .then(parseStore)
+      .then(
+        (loaded) => {
+          setStore(loaded);
+          setBotsStatus('ok');
+        },
+        () => setBotsStatus('failed'),
+      );
+  }, []);
+
+  // Restore the saved server and the bots on launch.
   useEffect(() => {
+    reloadBots();
     (async () => {
       const [url, token] = await Promise.all([AsyncStorage.getItem(URL_KEY), SecureStore.getItemAsync(TOKEN_KEY)]);
       if (url && token) setConn({ url, token });
       else setConnStatus('none');
     })();
-  }, []);
+  }, [reloadBots]);
 
   useEffect(() => {
     if (conn) refreshSessions();
   }, [conn, refreshSessions]);
 
+  const persist = useCallback(async (next: BotStore) => {
+    await AsyncStorage.setItem(BOTS_KEY, JSON.stringify(next));
+    storeRef.current = next;
+    setStore(next);
+  }, []);
+
+  const abortAll = () => {
+    aborts.current.forEach((c) => c.abort());
+    aborts.current.clear();
+  };
+
   const connect = useCallback(async (url: string, token: string) => {
     const next = { url: url.trim(), token: token.trim() };
     await hermes.verify(next);
     await Promise.all([AsyncStorage.setItem(URL_KEY, next.url), SecureStore.setItemAsync(TOKEN_KEY, next.token)]);
-    dispatch({ type: 'new' });
+    abortAll();
+    dispatch({ reset: true });
     setConn(next);
     setConnStatus('connected');
   }, []);
 
   const disconnect = useCallback(async () => {
-    abortRef.current?.abort();
+    abortAll();
     await Promise.all([AsyncStorage.removeItem(URL_KEY), SecureStore.deleteItemAsync(TOKEN_KEY)]);
-    dispatch({ type: 'new' });
+    dispatch({ reset: true });
     setConn(null);
     setSessions({ list: [], status: 'loading' });
     setConnStatus('none');
@@ -109,19 +172,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [conn, fail, refreshSessions]);
 
   const send = useCallback(
-    async (text: string) => {
-      if (!conn || chatRef.current.run || !text.trim()) return;
+    async (key: ChatKey, text: string) => {
+      const current = chatsRef.current[key] ?? initialChat;
+      if (!conn || current.run || !text.trim()) return;
       const userId = uid();
       const assistantId = uid();
-      dispatch({ type: 'send', text, userId, assistantId, at: Date.now() });
+      dispatch({ key, action: { type: 'send', text, userId, assistantId, at: Date.now() } });
       const controller = new AbortController();
-      abortRef.current = controller;
+      aborts.current.set(key, controller);
       let started = false;
       try {
-        let sessionId = chatRef.current.sessionId;
+        let sessionId = current.sessionId;
         if (!sessionId) {
           sessionId = await hermes.createSession(conn);
-          dispatch({ type: 'sessionCreated', sessionId });
+          dispatch({ key, action: { type: 'sessionCreated', sessionId } });
+          // Remember which bot the conversation belongs to. If the write fails the
+          // link still holds for this launch.
+          if (key !== NO_BOT) {
+            const next = { ...storeRef.current, conversations: { ...storeRef.current.conversations, [sessionId]: key } };
+            persist(next).catch(() => setStore(next));
+          }
         }
         await hermes.chatStream(
           conn,
@@ -129,55 +199,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
           text,
           (event) => {
             if (event.type === 'started') started = true;
-            dispatch({ type: 'stream', assistantId, event });
+            if (event.type === 'completed' && event.runtime.model) setRuntime(event.runtime);
+            dispatch({ key, action: { type: 'stream', assistantId, event } });
           },
           controller.signal,
         );
         // A stream that closed without a terminal event did not finish.
         dispatch({
-          type: 'stream',
-          assistantId,
-          event: { type: 'end', status: controller.signal.aborted ? 'cancelled' : 'failed' },
+          key,
+          action: { type: 'stream', assistantId, event: { type: 'end', status: controller.signal.aborted ? 'cancelled' : 'failed' } },
         });
         refreshSessions();
       } catch (e) {
-        if (started) dispatch({ type: 'stream', assistantId, event: { type: 'error', message: String(e) } });
-        else dispatch({ type: 'sendFailed', userId, assistantId });
+        if (started) dispatch({ key, action: { type: 'stream', assistantId, event: { type: 'error', message: String(e) } } });
+        else dispatch({ key, action: { type: 'sendFailed', userId, assistantId } });
         fail(e);
+      } finally {
+        if (aborts.current.get(key) === controller) aborts.current.delete(key);
       }
     },
-    [conn, fail, refreshSessions],
+    [conn, fail, persist, refreshSessions],
   );
 
   const retry = useCallback(
-    (messageId: string) => {
-      const { messages } = chatRef.current;
+    (key: ChatKey, messageId: string) => {
+      const { messages } = chatsRef.current[key] ?? initialChat;
       const i = messages.findIndex((m) => m.id === messageId);
       if (i === -1) return;
       const user = messages[i].role === 'user' ? messages[i] : messages.slice(0, i).reverse().find((m) => m.role === 'user');
       if (!user) return;
-      dispatch({ type: 'remove', id: messageId });
-      if (user.id !== messageId) dispatch({ type: 'remove', id: user.id });
-      send(user.text);
+      dispatch({ key, action: { type: 'remove', id: messageId } });
+      if (user.id !== messageId) dispatch({ key, action: { type: 'remove', id: user.id } });
+      send(key, user.text);
     },
     [send],
   );
 
-  const stop = useCallback(() => {
-    const runId = chatRef.current.run?.runId;
-    // Hermes interrupts the turn when the stream closes; /stop is the explicit route.
-    if (conn && runId) hermes.stopRun(conn, runId).catch(() => abortRef.current?.abort());
-    else abortRef.current?.abort();
-  }, [conn]);
+  const stop = useCallback(
+    (key: ChatKey) => {
+      const runId = chatsRef.current[key]?.run?.runId;
+      const abort = () => aborts.current.get(key)?.abort();
+      // Hermes interrupts the turn when the stream closes; /stop is the explicit route.
+      if (conn && runId) hermes.stopRun(conn, runId).catch(abort);
+      else abort();
+    },
+    [conn],
+  );
 
-  const openSession = useCallback(
-    (id: string) => {
-      if (!conn || chatRef.current.run) return;
-      dispatch({ type: 'open', sessionId: id });
+  const load = useCallback(
+    (key: ChatKey, id: string) => {
+      if (!conn) return;
+      dispatch({ key, action: { type: 'open', sessionId: id } });
       hermes.messages(conn, id).then(
-        (messages) => dispatch({ type: 'loaded', sessionId: id, messages }),
+        (messages) => dispatch({ key, action: { type: 'loaded', sessionId: id, messages } }),
         (e) => {
-          dispatch({ type: 'loadFailed', sessionId: id });
+          dispatch({ key, action: { type: 'loadFailed', sessionId: id } });
           fail(e);
         },
       );
@@ -185,16 +261,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [conn, fail],
   );
 
-  const newChat = useCallback(() => {
-    if (!chatRef.current.run) dispatch({ type: 'new' });
+  // bots.md: opens the bot's latest conversation, or a new empty one.
+  const openBot = useCallback(
+    (botId: string) => {
+      const chat = chatsRef.current[botId];
+      if (chat?.run || chat?.sessionId || chat?.messages.length) return;
+      const latest = latestSession(sessionsRef.current.list, storeRef.current, botId);
+      if (latest) load(botId, latest.id);
+    },
+    [load],
+  );
+
+  const openSession = useCallback(
+    (id: string): ChatKey => {
+      const key = storeRef.current.conversations[id] ?? NO_BOT;
+      const chat = chatsRef.current[key];
+      const alreadyOpen = chat?.sessionId === id && chat.loading !== 'failed';
+      if (!chat?.run && !alreadyOpen) load(key, id);
+      return key;
+    },
+    [load],
+  );
+
+  const newChat = useCallback((key: ChatKey) => {
+    if (!chatsRef.current[key]?.run) dispatch({ key, action: { type: 'new' } });
   }, []);
 
   const respondApproval = useCallback(
-    async (approval: Approval, choice: 'once' | 'deny') => {
-      const runId = chatRef.current.run?.runId;
+    async (key: ChatKey, approval: Approval, choice: 'once' | 'deny') => {
+      const runId = chatsRef.current[key]?.run?.runId;
       if (!conn || !runId) return;
       await hermes.respondApproval(conn, runId, approval, choice);
-      dispatch({ type: 'approvalResolved', approval });
+      dispatch({ key, action: { type: 'approvalResolved', approval } });
     },
     [conn],
   );
@@ -203,7 +301,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       if (!conn) return;
       await hermes.deleteSession(conn, id);
-      if (chatRef.current.sessionId === id) dispatch({ type: 'new' });
+      for (const [key, chat] of Object.entries(chatsRef.current)) {
+        if (chat.sessionId === id) dispatch({ key, action: { type: 'new' } });
+      }
       setSessions((s) => ({ ...s, list: s.list.filter((x) => x.id !== id) }));
     },
     [conn],
@@ -218,6 +318,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [conn],
   );
 
+  const saveBot = useCallback(
+    async (draft: BotDraft, id?: string): Promise<Bot> => {
+      const now = Date.now();
+      const { bots } = storeRef.current;
+      const existing = bots.find((b) => b.id === id);
+      const bot: Bot = existing
+        ? { ...existing, ...draft, name: draft.name.trim(), updatedAt: now }
+        : { id: uid(), ...draft, name: draft.name.trim(), createdAt: now, updatedAt: now };
+      await persist({ ...storeRef.current, bots: existing ? bots.map((b) => (b.id === bot.id ? bot : b)) : [...bots, bot] });
+      return bot;
+    },
+    [persist],
+  );
+
+  // Local only: the bot's conversations stay in Hermes but leave the app, because
+  // their link to the missing bot is kept (see visibleSessions).
+  const deleteBot = useCallback(
+    async (id: string) => {
+      await persist({ ...storeRef.current, bots: storeRef.current.bots.filter((b) => b.id !== id) });
+      stop(id);
+      aborts.current.get(id)?.abort();
+      dispatch({ drop: id });
+    },
+    [persist, stop],
+  );
+
+  const sessions = useMemo(() => ({ ...allSessions, list: visibleSessions(allSessions.list, store) }), [allSessions, store]);
+
   return (
     <Ctx.Provider
       value={{
@@ -226,17 +354,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         connect,
         disconnect,
         reconnect,
-        chat,
+        chats,
+        runtime,
         send,
         retry,
         stop,
-        openSession,
         newChat,
+        openBot,
+        openSession,
         respondApproval,
         sessions,
         refreshSessions,
         deleteSession,
         renameSession,
+        store,
+        botsStatus,
+        reloadBots,
+        saveBot,
+        deleteBot,
       }}
     >
       {children}

@@ -61,6 +61,7 @@ export function Button({
   loading,
   disabled,
   fullWidth,
+  height = 36,
 }: {
   label: string;
   onPress: () => void;
@@ -68,6 +69,7 @@ export function Button({
   loading?: boolean;
   disabled?: boolean;
   fullWidth?: boolean;
+  height?: number;
 }) {
   const c = useColors();
   const fg = variant === 'primary' ? c.textOnPrimary : variant === 'destructive' ? c.textError : c.textPrimary;
@@ -79,6 +81,7 @@ export function Button({
       accessibilityLabel={label}
       style={[
         styles.button,
+        { height },
         fullWidth && { alignSelf: 'stretch' },
         variant === 'primary' ? { backgroundColor: c.primary } : { borderWidth: 1, borderColor: c.border },
         loading && { opacity: 1 },
@@ -134,14 +137,14 @@ export function EmptyState({ title, line, action }: { title: string; line?: stri
   );
 }
 
-export function ErrorBanner({ text, onRetry }: { text: string; onRetry: () => void }) {
+export function ErrorBanner({ text, onRetry, action = 'Försök igen' }: { text: string; onRetry: () => void; action?: string }) {
   const c = useColors();
   return (
     <View style={[styles.banner, { backgroundColor: c.bgMuted, borderLeftColor: c.errorFill }]}>
       <Text style={[type.small, { color: c.textPrimary, flex: 1 }]}>
         {text} ·{' '}
         <Text accessibilityRole="link" onPress={onRetry} style={{ color: c.link, textDecorationLine: 'underline' }}>
-          Försök igen
+          {action}
         </Text>
       </Text>
     </View>

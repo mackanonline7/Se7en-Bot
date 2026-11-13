@@ -28,6 +28,11 @@ const light = {
   textError: '#D70015',
   focus: '#8E8E93',
   scrim: 'rgba(0,0,0,0.32)',
+  // tokens.md › Botfärger: only for the bot's body, never for text, buttons or surfaces.
+  bot: { red: '#D9433F', amber: '#B26B00', green: '#2E8540', teal: '#13858A', blue: '#2F6FD6', violet: '#7B55E0', pink: '#C2418A' },
+  botEye: '#FFFFFF',
+  botEmptyBody: '#E5E5E5',
+  botEmptyEye: '#86868B',
 };
 
 export type Colors = typeof light;
@@ -59,6 +64,10 @@ const dark: Colors = {
   textError: '#FF6961',
   focus: '#8E8E93',
   scrim: 'rgba(0,0,0,0.50)',
+  bot: { red: '#FF6B66', amber: '#E8A93A', green: '#4CC764', teal: '#3CC3C6', blue: '#5E9BFF', violet: '#A68BFF', pink: '#F27AB8' },
+  botEye: '#1C1C1E',
+  botEmptyBody: '#38383A',
+  botEmptyEye: '#98989D',
 };
 
 export const palettes = { light, dark };
@@ -71,6 +80,7 @@ export const type = {
   button: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
   small: { fontSize: 13, lineHeight: 18, fontWeight: '400' },
   caption: { fontSize: 12, lineHeight: 16, fontWeight: '400' },
+  titleLarge: { fontSize: 28, lineHeight: 34, fontWeight: '700' },
   overline: { fontSize: 11, lineHeight: 14, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.6 },
   mono: { fontSize: 13, lineHeight: 18, fontWeight: '400', fontFamily: 'Menlo' },
 } satisfies Record<string, TextStyle>;

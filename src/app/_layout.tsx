@@ -10,15 +10,15 @@ import { useColors } from '../theme/theme';
 function Navigator() {
   const c = useColors();
   const segments = useSegments();
-  // Edge swipe opens the drawer on Chatt only; pushed views use it for "back".
-  const onChat = segments.length <= 1;
+  // Edge swipe opens the drawer on Bots only; pushed views use it for "back".
+  const onBots = segments.length <= 1;
   return (
     <Drawer
       drawerContent={(props) => <HistoryDrawer navigation={props.navigation} />}
       screenOptions={{
         headerShown: false,
         drawerType: 'front',
-        swipeEnabled: onChat,
+        swipeEnabled: onBots,
         drawerStyle: { width: '84%', backgroundColor: c.bgSidebar },
         overlayColor: c.scrim,
         sceneStyle: { backgroundColor: c.bg },

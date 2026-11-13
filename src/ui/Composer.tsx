@@ -6,9 +6,9 @@ import { useColors } from '../theme/theme';
 import { radius, type } from '../theme/tokens';
 import { Tap } from './Tap';
 
-type Props = { offline: boolean; streaming: boolean; onSend: (text: string) => void; onStop: () => void };
+type Props = { placeholder: string; offline: boolean; streaming: boolean; onSend: (text: string) => void; onStop: () => void };
 
-export function Composer({ offline, streaming, onSend, onStop }: Props) {
+export function Composer({ placeholder, offline, streaming, onSend, onStop }: Props) {
   const c = useColors();
   const [text, setText] = useState('');
   const canSend = text.trim() !== '' && !offline;
@@ -34,7 +34,7 @@ export function Composer({ offline, streaming, onSend, onStop }: Props) {
         onChangeText={setText}
         multiline
         editable={!offline}
-        placeholder={offline ? 'Ingen anslutning till Hermes' : 'Fråga Se7en…'}
+        placeholder={offline ? 'Ingen anslutning till Hermes' : placeholder}
         placeholderTextColor={c.textSecondary}
         style={[type.body, styles.input, { color: c.textPrimary }]}
         accessibilityLabel="Meddelande"

@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { Search, Settings, SquarePen, X } from 'lucide-react-native';
+import { Search, Settings, X } from 'lucide-react-native';
 import { useMemo, useState, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
@@ -7,10 +7,13 @@ import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reani
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Session } from '../hermes/client';
 import { useApp } from '../state/AppState';
-import { clock, groupSessions, searchSessions, sessionTitle } from '../state/history';
+import { botOfSession, botStatus } from '../state/bots';
+import { clock, groupSessions, highlight, searchSessions, sessionTitle } from '../state/history';
 import { useColors } from '../theme/theme';
 import { radius, space, type } from '../theme/tokens';
-import { Overline, Skeleton, StatusDot, STATUS_LABEL } from './parts';
+import { BotAvatar } from './BotAvatar';
+import { Overline, Skeleton, StatusDot } from './parts';
+import { DotsMark } from './PresenceDots';
 import { Tap } from './Tap';
 
 type Nav = { closeDrawer(): void };
@@ -35,25 +38,22 @@ export function HistoryDrawer({ navigation }: { navigation: Nav }) {
   const router = useRouter();
   const app = useApp();
   const [query, setQuery] = useState('');
-  const { sessions, chat } = app;
-  const runKind = chat.run ? (chat.run.approvals.length ? 'waiting' : 'busy') : null;
+  const { sessions, store } = app;
+  const someoneWaits = Object.values(app.chats).some((chat) => botStatus(chat) === 'waiting');
 
   const close = () => navigation.closeDrawer();
-  const go = (path: '/agent' | '/server') => {
-    close();
-    router.push(path);
-  };
-  const toChat = () => {
+  const toBots = () => {
     close();
     if (router.canDismiss()) router.dismissAll();
   };
   const openChat = (id: string) => {
-    toChat();
-    app.openSession(id);
+    const key = app.openSession(id);
+    toBots();
+    router.push(key ? { pathname: '/chat', params: { bot: key } } : '/chat');
   };
-  const newChat = () => {
-    toChat();
-    app.newChat();
+  const openServer = () => {
+    close();
+    router.push('/server');
   };
 
   const confirmDelete = (s: Session) =>
@@ -72,11 +72,14 @@ export function HistoryDrawer({ navigation }: { navigation: Nav }) {
       },
     );
 
-  const results = useMemo(() => (query.trim() ? searchSessions(sessions.list, query) : null), [sessions.list, query]);
+  const results = useMemo(
+    () => (query.trim() ? searchSessions(sessions.list, query, (id) => botOfSession(store, id)?.name) : null),
+    [sessions.list, query, store],
+  );
   const groups = useMemo(() => groupSessions(sessions.list, Date.now()), [sessions.list]);
 
   const row = (s: Session, showTime: boolean) => {
-    const selected = s.id === chat.sessionId;
+    const bot = botOfSession(store, s.id);
     return (
       <ReanimatedSwipeable
         key={s.id}
@@ -84,15 +87,15 @@ export function HistoryDrawer({ navigation }: { navigation: Nav }) {
         rightThreshold={40}
         renderRightActions={(progress) => <DeleteAction progress={progress} onPress={() => confirmDelete(s)} />}
       >
-        <Tap
-          feedback="row"
-          onPress={() => openChat(s.id)}
-          onLongPress={() => showMenu(s)}
-          accessibilityState={{ selected }}
-          style={[styles.row, { backgroundColor: selected ? c.bgRowSelected : c.bgSidebar }]}
-        >
-          <Text numberOfLines={1} style={[selected ? type.bodyStrong : type.body, { color: c.textPrimary, flex: 1 }]}>
-            {sessionTitle(s)}
+        <Tap feedback="row" onPress={() => openChat(s.id)} onLongPress={() => showMenu(s)} style={[styles.row, { backgroundColor: c.bgSidebar }]}>
+          {/* The bot's figure shows whose conversation it is; older ones have the mark. */}
+          {bot ? <BotAvatar shape={bot.shape} color={bot.color} size={14} still /> : <DotsMark size={14} color={c.iconMuted} />}
+          <Text numberOfLines={1} style={[type.body, { color: c.textPrimary, flex: 1 }]}>
+            {highlight(sessionTitle(s), results ? query : '').map((part, i) => (
+              <Text key={i} style={part.match ? { fontWeight: '600' } : undefined}>
+                {part.text}
+              </Text>
+            ))}
           </Text>
           {showTime && <Text style={[type.caption, { color: c.textSecondary }]}>{clock(s.updatedAt)}</Text>}
         </Tap>
@@ -147,38 +150,32 @@ export function HistoryDrawer({ navigation }: { navigation: Nav }) {
 
   return (
     <View style={[styles.fill, { paddingTop: insets.top, backgroundColor: c.bgSidebar }]}>
-      <View style={styles.searchRow}>
-        <View style={[styles.search, { borderColor: c.border, backgroundColor: dark ? c.bgCard : c.bg }]}>
-          <Search size={16} strokeWidth={1.8} color={c.iconMuted} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Sök i samtal"
-            placeholderTextColor={c.textSecondary}
-            style={[type.body, { flex: 1, color: c.textPrimary, padding: 0 }]}
-            accessibilityLabel="Sök i samtal"
-          />
-          {query ? (
-            <Tap onPress={() => setQuery('')} accessibilityLabel="Rensa sökning">
-              <X size={16} strokeWidth={1.8} color={c.iconMuted} />
-            </Tap>
-          ) : null}
-        </View>
-        <Tap onPress={newChat} accessibilityLabel="Nytt samtal" style={styles.icon}>
-          <SquarePen size={20} strokeWidth={1.8} color={c.textPrimary} />
-        </Tap>
+      <View style={[styles.search, { borderColor: c.border, backgroundColor: dark ? c.bgCard : c.bg }]}>
+        <Search size={16} strokeWidth={1.8} color={c.iconMuted} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Sök i samtal"
+          placeholderTextColor={c.textSecondary}
+          style={[type.body, { flex: 1, color: c.textPrimary, padding: 0 }]}
+          accessibilityLabel="Sök i samtal"
+        />
+        {query ? (
+          <Tap onPress={() => setQuery('')} accessibilityLabel="Rensa sökning">
+            <X size={16} strokeWidth={1.8} color={c.iconMuted} />
+          </Tap>
+        ) : null}
       </View>
 
       <View style={styles.nav}>
-        {navRow('Chatt', toChat, true)}
         {navRow(
-          'Agent',
-          () => go('/agent'),
-          false,
-          runKind && (
+          'Bots',
+          toBots,
+          true,
+          someoneWaits && (
             <View style={styles.status}>
-              <StatusDot kind={runKind} />
-              <Text style={[type.small, { color: runKind === 'waiting' ? c.textWaiting : c.textPrimary }]}>{STATUS_LABEL[runKind]}</Text>
+              <StatusDot kind="waiting" />
+              <Text style={[type.small, { color: c.textWaiting }]}>Väntar på dig</Text>
             </View>
           ),
         )}
@@ -194,12 +191,7 @@ export function HistoryDrawer({ navigation }: { navigation: Nav }) {
 
       <View style={[styles.divider, { backgroundColor: c.border, marginBottom: 0 }]} />
       {/* Inställningar is a later build step; until then the footer opens its Hermes-server sheet. */}
-      <Tap
-        feedback="row"
-        onPress={() => go('/server')}
-        accessibilityLabel="Inställningar"
-        style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}
-      >
+      <Tap feedback="row" onPress={openServer} accessibilityLabel="Inställningar" style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={[styles.avatar, { backgroundColor: c.primary }]}>
           <Text style={{ fontSize: 12, fontWeight: '700', color: c.textOnPrimary }}>Du</Text>
         </View>
@@ -212,9 +204,7 @@ export function HistoryDrawer({ navigation }: { navigation: Nav }) {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 12, paddingRight: 4, paddingVertical: 8 },
-  search: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 12, paddingVertical: 7, paddingHorizontal: 10 },
-  icon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  search: { marginHorizontal: 14, marginVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 12, paddingVertical: 7, paddingHorizontal: 10 },
   nav: { paddingHorizontal: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, borderRadius: radius.sm, paddingVertical: 8, paddingHorizontal: 12 },
   status: { flexDirection: 'row', alignItems: 'center', gap: 6 },

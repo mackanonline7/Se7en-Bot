@@ -2,19 +2,19 @@ import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useApp } from '../../state/AppState';
+import { NO_BOT, useApp } from '../../state/AppState';
 import { useColors } from '../../theme/theme';
 import { space, type } from '../../theme/tokens';
 import { Markdown } from '../../ui/Markdown';
 import { Button } from '../../ui/parts';
 
-// agent.md › Visa utkast: the approval's preview + Godkänn/Neka at the bottom.
+// bots.md › Visa: the approval's preview + Godkänn/Neka at the bottom.
 export default function DraftSheet() {
   const c = useColors();
   const router = useRouter();
   const app = useApp();
-  const { i } = useLocalSearchParams<{ i: string }>();
-  const approval = app.chat.run?.approvals[Number(i)];
+  const { key = NO_BOT, i } = useLocalSearchParams<{ key?: string; i: string }>();
+  const approval = app.chats[key]?.run?.approvals[Number(i)];
   const [state, setState] = useState<'idle' | 'once' | 'deny' | 'error'>('idle');
 
   if (!approval) {
@@ -28,7 +28,7 @@ export default function DraftSheet() {
   const respond = async (choice: 'once' | 'deny') => {
     setState(choice);
     try {
-      await app.respondApproval(approval, choice);
+      await app.respondApproval(key, approval, choice);
       if (choice === 'once') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch {

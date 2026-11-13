@@ -20,7 +20,8 @@ export default function MainLayout() {
       }}
     >
       <Stack.Screen name="index" />
-      <Stack.Screen name="agent" />
+      <Stack.Screen name="chat" />
+      <Stack.Screen name="bot" options={{ presentation: 'pageSheet', contentStyle: { backgroundColor: c.bgCard } }} />
       <Stack.Screen name="server" options={sheet} />
       <Stack.Screen name="draft" options={sheet} />
     </Stack>

@@ -36,6 +36,17 @@ function Dot({ x, y, r, t, color, still }: { x: number; y: number; r: number; t:
   return <AnimatedCircle cx={x} cy={y} fill={color} animatedProps={props} />;
 }
 
+// The mark as a still icon, e.g. for conversations without a bot in the history.
+export function DotsMark({ size, color }: { size: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="44 44 72 72">
+      {INNER.map((d, i) => (
+        <Circle key={i} cx={d.x} cy={d.y} r={d.r} fill={color} />
+      ))}
+    </Svg>
+  );
+}
+
 export function PresenceDots({ size = 'sm', mode = 'idle' }: { size?: keyof typeof SIZES; mode?: PresenceMode }) {
   const c = useColors();
   const reduce = useReduceMotion();
