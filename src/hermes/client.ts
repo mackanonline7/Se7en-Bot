@@ -206,11 +206,6 @@ export const hermes = {
       paused: j.state === 'paused',
     }));
   },
-
-  async toolsets(conn: Connection): Promise<string[]> {
-    const body = await request<{ data: any[] }>(conn, '/v1/toolsets');
-    return body.data.filter((t) => t.enabled).map((t) => String(t.label || t.name));
-  },
 };
 
 export function toStreamEvent(name: string, p: any): StreamEvent | null {

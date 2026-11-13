@@ -81,15 +81,6 @@ export async function startMockHermes(): Promise<MockHermes> {
     if (route === 'GET /api/jobs') {
       return json(200, { jobs: [{ id: 'abc123def456', name: 'Morgonbrief', schedule_display: 'Varje dag 07:00', state: 'scheduled' }] });
     }
-    if (route === 'GET /v1/toolsets') {
-      return json(200, {
-        object: 'list',
-        data: [
-          { name: 'web', label: 'Webb', enabled: true, tools: ['web_search'] },
-          { name: 'image_gen', label: 'Bilder', enabled: false, tools: [] },
-        ],
-      });
-    }
     json(404, { error: { message: 'not found' } });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

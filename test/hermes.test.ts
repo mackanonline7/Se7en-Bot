@@ -126,7 +126,6 @@ test('approval: a canonical gateway gets the exact prompt identity from the run'
   expect(server.received.at(-1)!.body).toEqual({ request_id: 'p_7', execution_generation: 3, choice: 'deny' });
 });
 
-test('agent info: jobs and enabled toolsets', async () => {
+test('agent info: scheduled jobs', async () => {
   expect(await hermes.jobs(conn())).toEqual([{ id: 'abc123def456', name: 'Morgonbrief', schedule: 'Varje dag 07:00', paused: false }]);
-  expect(await hermes.toolsets(conn())).toEqual(['Webb']);
 });

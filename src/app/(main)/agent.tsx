@@ -14,7 +14,7 @@ import { PresenceDots } from '../../ui/PresenceDots';
 import { Button, ErrorBanner, Overline, Skeleton, StatusChip, StatusDot, ThinkingDots } from '../../ui/parts';
 import { SubTopBar } from '../../ui/TopBar';
 
-type Info = { jobs: Job[]; tools: string[]; at: number };
+type Info = { jobs: Job[]; at: number };
 
 const elapsed = (ms: number) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -107,9 +107,9 @@ export default function AgentScreen() {
     if (!app.conn) return;
     const conn = app.conn;
     setStatus((s) => (s === 'failed' ? 'loading' : s));
-    Promise.all([hermes.jobs(conn), hermes.toolsets(conn)]).then(
-      ([jobs, tools]) => {
-        setInfo({ jobs, tools, at: Date.now() });
+    hermes.jobs(conn).then(
+      (jobs) => {
+        setInfo({ jobs, at: Date.now() });
         setStatus('ok');
       },
       () => setStatus('failed'),
@@ -174,14 +174,6 @@ export default function AgentScreen() {
             ) : (
               <Text style={[type.small, { color: c.textSecondary }]}>Inget schemalagt.</Text>
             )}
-            <Overline>Verktyg</Overline>
-            <View style={styles.chips}>
-              {info.tools.map((t) => (
-                <View key={t} style={[styles.chip, { borderColor: c.border }]}>
-                  <Text style={[type.small, { color: c.textPrimary }]}>{t}</Text>
-                </View>
-              ))}
-            </View>
           </View>
         ) : null}
       </ScrollView>
@@ -198,6 +190,4 @@ const styles = StyleSheet.create({
   stepIcon: { width: 20, alignItems: 'center' },
   idle: { alignItems: 'center', gap: 6, paddingVertical: space[2] },
   sections: { gap: space[2] },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  chip: { borderWidth: 1, borderRadius: radius.full, paddingVertical: 3, paddingHorizontal: 10 },
 });
